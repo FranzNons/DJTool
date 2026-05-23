@@ -115,7 +115,14 @@ html, body { height: 100%; background: var(--bg); color: var(--text1); font-fami
 }
 .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .user-name { font-size: 11px; color: var(--text2); }
-.logout-btn {
+.topbar-import-btn {
+  background: none; border: 1px solid var(--accent-border); border-radius: var(--radius);
+  padding: 7px 14px; font-size: 11px; font-family: var(--mono); color: var(--accent);
+  cursor: pointer; transition: all 0.12s; white-space: nowrap;
+}
+.topbar-import-btn:hover { background: var(--accent-dim); }
+
+
   background: none; border: 1px solid var(--border2); border-radius: var(--radius);
   padding: 5px 10px; font-size: 11px; font-family: var(--mono); color: var(--text3);
   cursor: pointer; transition: all 0.12s;
@@ -331,7 +338,30 @@ html, body { height: 100%; background: var(--bg); color: var(--text1); font-fami
 }
 .edit-tag-del:hover { border-color: var(--red); color: var(--red); }
 
-/* ── TOAST ── */
+/* ── PLAYLIST IMPORT ── */
+.playlist-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  cursor: pointer; transition: all 0.12s; margin-bottom: 6px;
+}
+.playlist-item:hover { border-color: var(--accent-border); background: var(--accent-dim); }
+.playlist-cover {
+  width: 40px; height: 40px; border-radius: 4px; object-fit: cover;
+  background: var(--bg4); flex-shrink: 0;
+}
+.playlist-info { flex: 1; min-width: 0; }
+.playlist-name { font-size: 12px; font-weight: 500; color: var(--text1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.playlist-meta { font-size: 11px; color: var(--text3); }
+.import-progress {
+  background: var(--bg3); border-radius: var(--radius); padding: 16px;
+  text-align: center; font-size: 12px; color: var(--text2); line-height: 2;
+}
+.progress-bar-wrap {
+  background: var(--bg4); border-radius: 999px; height: 4px; margin: 12px 0; overflow: hidden;
+}
+.progress-bar { height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.3s; width: 0%; }
+
+
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
   background: var(--bg3); border: 1px solid var(--border2); border-radius: var(--radius);
@@ -363,6 +393,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text1); font-fami
       <input type="text" id="spSearch" placeholder="Buscar en Spotify para importar..." autocomplete="off" />
       <div class="spotify-results hidden" id="spResults"></div>
     </div>
+    <button class="topbar-import-btn" onclick="openPlaylistImport()">↓ Importar playlist</button>
     <div class="topbar-spacer"></div>
     <div class="topbar-user">
       <div class="user-avatar" id="userAvatar"></div>
@@ -450,14 +481,26 @@ html, body { height: 100%; background: var(--bg); color: var(--text1); font-fami
   </div>
 </div>
 
+<!-- MODAL: IMPORT PLAYLIST -->
+<div class="modal-overlay hidden" id="playlistModal">
+  <div class="modal" style="width:440px;">
+    <div class="modal-title">Importar desde playlist</div>
+    <div id="playlistModalBody">
+      <div style="font-size:12px;color:var(--text3);padding:1rem 0;">Cargando tus playlists...</div>
+    </div>
+    <div class="modal-actions"><button class="modal-cancel" onclick="closeModal('playlistModal')">Cerrar</button></div>
+  </div>
+</div>
+
 <!-- TOAST -->
+
 <div class="toast hidden" id="toast"></div>
 
 <script>
 // ── CONFIG ──
 const CLIENT_ID = 'a4ccf19e0bd54e84b7c4b501f3d89135';
 const REDIRECT_URI = 'https://franznons.github.io/DJTool/callback';
-const SCOPES = 'user-read-private user-read-email';
+const SCOPES = 'user-read-private user-read-email playlist-read-private playlist-read-collaborative';
 const SUPABASE_URL = 'https://uuwdlzladtqtpgzsbwfp.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV1d2RsemxhZHRxdHBnenNid2ZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MTU0NDAsImV4cCI6MjA5NTA5MTQ0MH0.SdgvPoBIbE1hWXytunnWhUdh2OgARFR3AWvlNLwFwy0';
 
@@ -942,6 +985,127 @@ async function importTrack(id, title, artist, album, cover) {
     openEditSong(newSong.id);
   }
   toast(`"${title}" importada${prefill.camelot_key ? ' · '+prefill.camelot_key : ''}`);
+}
+
+// ── PLAYLIST IMPORT ──
+async function openPlaylistImport() {
+  document.getElementById('playlistModal').classList.remove('hidden');
+  document.getElementById('playlistModalBody').innerHTML = `<div style="font-size:12px;color:var(--text3);padding:1rem 0;">Cargando tus playlists...</div>`;
+
+  let playlists = [];
+  let offset = 0;
+  while (true) {
+    const data = await spFetch(`/me/playlists?limit=50&offset=${offset}`);
+    if (!data || !data.items) break;
+    playlists = playlists.concat(data.items);
+    if (data.items.length < 50) break;
+    offset += 50;
+  }
+
+  if (!playlists.length) {
+    document.getElementById('playlistModalBody').innerHTML = `<div style="font-size:12px;color:var(--text3);padding:1rem 0;">No se encontraron playlists.</div>`;
+    return;
+  }
+
+  document.getElementById('playlistModalBody').innerHTML = `
+    <div style="font-size:11px;color:var(--text3);margin-bottom:10px;">${playlists.length} playlists encontradas — elige una para importar</div>
+    <div style="max-height:360px;overflow-y:auto;padding-right:4px;">
+      ${playlists.map(p => {
+        const img = p.images && p.images[0] ? p.images[0].url : '';
+        const count = p.tracks ? p.tracks.total : '?';
+        return `<div class="playlist-item" onclick="importPlaylist('${p.id}','${esc2(p.name)}',${count})">
+          ${img ? `<img class="playlist-cover" src="${img}" alt="" />` : `<div class="playlist-cover"></div>`}
+          <div class="playlist-info">
+            <div class="playlist-name">${esc(p.name)}</div>
+            <div class="playlist-meta">${count} canciones</div>
+          </div>
+          <span style="font-size:11px;color:var(--accent);">Importar →</span>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+async function importPlaylist(playlistId, playlistName, totalTracks) {
+  const body = document.getElementById('playlistModalBody');
+  body.innerHTML = `
+    <div class="import-progress">
+      <div style="font-weight:500;color:var(--text1);margin-bottom:4px;">${esc(playlistName)}</div>
+      <div id="importStatus">Obteniendo canciones...</div>
+      <div class="progress-bar-wrap"><div class="progress-bar" id="progressBar"></div></div>
+      <div id="importDetail" style="font-size:11px;color:var(--text3);">0 / ${totalTracks}</div>
+    </div>`;
+
+  // Fetch all tracks from playlist
+  let tracks = [];
+  let offset = 0;
+  while (true) {
+    const data = await spFetch(`/playlists/${playlistId}/tracks?limit=100&offset=${offset}&fields=items(track(id,name,artists,album))`);
+    if (!data || !data.items) break;
+    const valid = data.items.filter(i => i.track && i.track.id).map(i => i.track);
+    tracks = tracks.concat(valid);
+    if (data.items.length < 100) break;
+    offset += 100;
+  }
+
+  // Filter out already imported
+  const existingSpIds = new Set(songs.map(s => s.spotify_id).filter(Boolean));
+  const toImport = tracks.filter(t => !existingSpIds.has(t.id));
+
+  document.getElementById('importStatus').textContent = `${toImport.length} canciones nuevas para importar`;
+  document.getElementById('importDetail').textContent = `(${tracks.length - toImport.length} ya están en tu biblioteca)`;
+
+  if (!toImport.length) {
+    document.getElementById('importStatus').textContent = 'Todas las canciones ya están en tu biblioteca';
+    document.getElementById('progressBar').style.width = '100%';
+    setTimeout(() => closeModal('playlistModal'), 2000);
+    return;
+  }
+
+  // Process in batches of 100 for audio features
+  let imported = 0;
+  const batchSize = 100;
+  for (let i = 0; i < toImport.length; i += batchSize) {
+    const batch = toImport.slice(i, i + batchSize);
+    const ids = batch.map(t => t.id).join(',');
+
+    document.getElementById('importStatus').textContent = `Obteniendo datos de audio...`;
+
+    const featData = await spFetch(`/audio-features?ids=${ids}`);
+    const featMap = {};
+    if (featData && featData.audio_features) {
+      featData.audio_features.forEach(f => { if (f) featMap[f.id] = f; });
+    }
+
+    for (const track of batch) {
+      const feat = featMap[track.id];
+      const camKey = feat ? (PITCH_TO_CAM[`${feat.key}_${feat.mode}`] || null) : null;
+      const cover = track.album?.images?.[2]?.url || track.album?.images?.[0]?.url || null;
+
+      await sb.post('songs', {
+        spotify_id: track.id,
+        title: track.name,
+        artist: track.artists.map(a => a.name).join(', '),
+        album: track.album?.name || null,
+        bpm: feat ? Math.round(feat.tempo) : null,
+        camelot_key: camKey,
+        cover_url: cover,
+        energy: feat?.energy || null
+      });
+
+      imported++;
+      const pct = Math.round((imported / toImport.length) * 100);
+      document.getElementById('progressBar').style.width = pct + '%';
+      document.getElementById('importStatus').textContent = `Importando canciones...`;
+      document.getElementById('importDetail').textContent = `${imported} / ${toImport.length}`;
+    }
+  }
+
+  document.getElementById('importStatus').textContent = `¡Listo! ${imported} canciones importadas`;
+  document.getElementById('importDetail').textContent = '';
+
+  await loadData(); renderAll();
+  toast(`${imported} canciones importadas de "${playlistName}"`);
+  setTimeout(() => closeModal('playlistModal'), 2000);
 }
 
 // ── SELECT ──
