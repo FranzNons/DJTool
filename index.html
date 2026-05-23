@@ -1023,7 +1023,7 @@ async function openPlaylistImport() {
       ${img ? `<img class="playlist-cover" src="${img}" alt="" />` : `<div class="playlist-cover"></div>`}
       <div class="playlist-info">
         <div class="playlist-name">${esc(p.name)}</div>
-        <div class="playlist-meta">${count} canciones</div>
+        <div class="playlist-meta">${count > 0 ? count + ' canciones' : 'cargando...'}</div>
       </div>
       <span style="font-size:11px;color:var(--accent);">Importar →</span>`;
     div.addEventListener('click', () => importPlaylist(p.id, p.name, count));
@@ -1045,9 +1045,10 @@ async function importPlaylist(playlistId, playlistName, totalTracks) {
   let tracks = [];
   let offset = 0;
   while (true) {
-    const data = await spFetch(`/playlists/${playlistId}/tracks?limit=100&offset=${offset}&fields=items(track(id,name,artists,album))`);
+    const data = await spFetch(`/playlists/${playlistId}/tracks?limit=100&offset=${offset}`);
+    console.log('Spotify tracks response:', data);
     if (!data || !data.items) break;
-    const valid = data.items.filter(i => i.track && i.track.id).map(i => i.track);
+    const valid = data.items.filter(i => i && i.track && i.track.id && i.track.name).map(i => i.track);
     tracks = tracks.concat(valid);
     if (data.items.length < 100) break;
     offset += 100;
