@@ -394,7 +394,8 @@ html, body { height: 100%; background: var(--bg); color: var(--text1); font-fami
       <div class="spotify-results hidden" id="spResults"></div>
     </div>
     <button class="topbar-import-btn" onclick="openPlaylistImport()">↓ Importar playlist</button>
-    <label class="topbar-import-btn" style="cursor:pointer;">↓ Importar CSV <input type="file" accept=".csv" style="display:none;" onchange="importCSV(this)" /></label>
+    <label class="topbar-import-btn" style="cursor:pointer;">↓ Importar CSV <input type="file" accept=".csv" style="display:none;" onchange="importCSV(this,'import')" /></label>
+    <label class="topbar-import-btn" style="cursor:pointer;">↻ Actualizar géneros <input type="file" accept=".csv" style="display:none;" onchange="importCSV(this,'genres')" /></label>
     <div class="topbar-spacer"></div>
     <div class="topbar-user">
       <div class="user-avatar" id="userAvatar"></div>
@@ -410,12 +411,35 @@ html, body { height: 100%; background: var(--bg); color: var(--text1); font-fami
         <input type="text" id="localSearch" placeholder="Filtrar biblioteca..." style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);padding:6px 10px;font-size:11px;font-family:var(--mono);color:var(--text1);outline:none;" />
       </div>
       <div class="sidebar-section">
+        <div class="sidebar-label">Ordenar por</div>
+        <select id="sortSelect" onchange="sortBy=this.value;renderSongs()" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);padding:6px 10px;font-size:11px;font-family:var(--mono);color:var(--text1);outline:none;">
+          <option value="created_at">Más recientes</option>
+          <option value="title">Nombre A–Z</option>
+          <option value="artist">Artista A–Z</option>
+          <option value="bpm">BPM ↑</option>
+          <option value="camelot">Camelot</option>
+        </select>
+      </div>
+      <div class="sidebar-section">
         <div class="sidebar-label">Género</div>
         <div class="pills" id="genrePills"></div>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Camelot</div>
         <div class="cam-grid" id="camelotGrid"></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Energy <span id="energyMinVal" style="color:var(--accent)">0%</span> — <span id="energyMaxVal" style="color:var(--accent)">100%</span></div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:10px;color:var(--text3);width:20px;">Min</span>
+            <input type="range" id="energyMin" min="0" max="100" value="0" style="flex:1;accent-color:var(--accent);" oninput="filters.energyMin=+this.value;document.getElementById('energyMinVal').textContent=this.value+'%';renderSongs()" />
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:10px;color:var(--text3);width:20px;">Max</span>
+            <input type="range" id="energyMax" min="0" max="100" value="100" style="flex:1;accent-color:var(--accent);" oninput="filters.energyMax=+this.value;document.getElementById('energyMaxVal').textContent=this.value+'%';renderSongs()" />
+          </div>
+        </div>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Tags</div>
@@ -471,12 +495,22 @@ html, body { height: 100%; background: var(--bg); color: var(--text1); font-fami
 
 <!-- MODAL: MANAGE TAGS -->
 <div class="modal-overlay hidden" id="tagsModal">
-  <div class="modal" style="width:320px;">
+  <div class="modal" style="width:380px;">
     <div class="modal-title">Tags personalizados</div>
     <div id="tagsModalList"></div>
     <div class="modal-field" style="margin-top:14px;">
       <label>Nuevo tag</label>
-      <div class="tag-row"><input type="text" id="mt_name" placeholder="nombre del tag..." /><button onclick="saveNewTag()">+</button></div>
+      <div style="display:flex;gap:6px;margin-bottom:6px;">
+        <input type="text" id="mt_name" placeholder="nombre del tag..." style="flex:1;" />
+        <select id="mt_category" style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);padding:6px 8px;font-size:11px;font-family:var(--mono);color:var(--text1);outline:none;">
+          <option value="">Sin categoría</option>
+          <option value="Instrumentos">Instrumentos</option>
+          <option value="País">País</option>
+          <option value="Mood">Mood</option>
+          <option value="Estructura">Estructura</option>
+        </select>
+      </div>
+      <button onclick="saveNewTag()" style="background:var(--accent);color:#000;border:none;border-radius:var(--radius);padding:6px 14px;font-size:11px;font-family:var(--sans);font-weight:700;cursor:pointer;">+ Crear tag</button>
     </div>
     <div class="modal-actions"><button class="modal-cancel" onclick="closeModal('tagsModal')">Cerrar</button></div>
   </div>
@@ -518,7 +552,8 @@ const PITCH_TO_CAM = {
 // ── STATE ──
 let spotifyToken = null;
 let songs = [], tags = [], songTags = [];
-let filters = { genres: [], camelot: [], tags: [], search: '' };
+let filters = { genres: [], camelot: [], tags: [], search: '', energyMin: 0, energyMax: 100 };
+let sortBy = 'created_at'; // 'created_at' | 'title' | 'artist' | 'bpm' | 'camelot'
 let selectedSong = null;
 let editingSongId = null;
 let spSearchTimer = null;
@@ -680,14 +715,21 @@ function renderSidebar() {
   ).join('');
 
   const tp = document.getElementById('tagPills');
-  tp.innerHTML = tags.map(t =>
-    `<span class="pill ${filters.tags.includes(t.id)?'active':''}" onclick="toggle('tags','${t.id}')">${t.name}</span>`
-  ).join('');
+  const cats = [...new Set(tags.map(t => t.category || ''))].sort();
+  let tagHtml = '';
+  cats.forEach(cat => {
+    const catTags = tags.filter(t => (t.category || '') === cat);
+    if (cat) tagHtml += `<div style="font-size:10px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;width:100%;margin-top:6px;margin-bottom:3px;">${esc(cat)}</div>`;
+    tagHtml += catTags.map(t =>
+      `<span class="pill ${filters.tags.includes(t.id)?'active':''}" onclick="toggle('tags','${t.id}')">${esc(t.name)}</span>`
+    ).join('');
+  });
+  tp.innerHTML = tagHtml || `<span style="font-size:10px;color:var(--text3)">Sin tags</span>`;
 }
 
 function filtered() {
   const q = filters.search.toLowerCase();
-  return songs.filter(s => {
+  let result = songs.filter(s => {
     if (q && !s.title.toLowerCase().includes(q) && !s.artist.toLowerCase().includes(q)) return false;
     if (filters.genres.length && !filters.genres.includes(s.genre)) return false;
     if (filters.camelot.length && !filters.camelot.includes(s.camelot_key)) return false;
@@ -695,8 +737,23 @@ function filtered() {
       const st = songTags.filter(x => x.song_id === s.id).map(x => x.tag_id);
       if (!filters.tags.every(tid => st.includes(tid))) return false;
     }
+    if (filters.energyMin > 0 || filters.energyMax < 100) {
+      const e = s.energy != null ? Math.round(s.energy * 100) : null;
+      if (e === null) return false;
+      if (e < filters.energyMin || e > filters.energyMax) return false;
+    }
     return true;
   });
+
+  result.sort((a, b) => {
+    if (sortBy === 'title') return (a.title||'').localeCompare(b.title||'');
+    if (sortBy === 'artist') return (a.artist||'').localeCompare(b.artist||'');
+    if (sortBy === 'bpm') return (a.bpm||0) - (b.bpm||0);
+    if (sortBy === 'camelot') return (a.camelot_key||'').localeCompare(b.camelot_key||'');
+    return 0; // created_at already ordered by DB
+  });
+
+  return result;
 }
 
 function renderSongs() {
@@ -728,6 +785,16 @@ function renderChips() {
   filters.genres.forEach(g => chips.push({ label: g, rm: () => toggle('genres', g) }));
   filters.camelot.forEach(k => chips.push({ label: `Camelot: ${k}`, rm: () => toggle('camelot', k) }));
   filters.tags.forEach(tid => { const t = tags.find(x => x.id === tid); if (t) chips.push({ label: t.name, rm: () => toggle('tags', tid) }); });
+  if (filters.energyMin > 0 || filters.energyMax < 100) {
+    chips.push({ label: `Energy: ${filters.energyMin}–${filters.energyMax}%`, rm: () => {
+      filters.energyMin = 0; filters.energyMax = 100;
+      document.getElementById('energyMin').value = 0;
+      document.getElementById('energyMax').value = 100;
+      document.getElementById('energyMinVal').textContent = '0%';
+      document.getElementById('energyMaxVal').textContent = '100%';
+      renderSongs();
+    }});
+  }
   window._chips = chips;
   document.getElementById('activeChips').innerHTML = chips.map((c,i) =>
     `<span class="chip">${esc(c.label)}<button onclick="window._chips[${i}].rm()">×</button></span>`
@@ -750,7 +817,7 @@ function renderDetail() {
       <div class="detail-artist">${esc(selectedSong.artist)}${selectedSong.genre?' · '+esc(selectedSong.genre):''}${selectedSong.bpm?' · '+selectedSong.bpm+' bpm':''}</div>
       <div class="detail-badges">
         ${selectedSong.camelot_key ? `<span class="badge accent">${selectedSong.camelot_key}</span>` : ''}
-        ${selectedSong.energy ? `<span class="badge">Energy ${Math.round(selectedSong.energy*100)}%</span>` : ''}
+        ${selectedSong.energy ? `<span class="badge" title="Intensidad percibida de la canción (0–100%)">Energy ${Math.round(selectedSong.energy*100)}%</span>` : ''}
         ${stags.map(t => `<span class="badge tag">${esc(t.name)}</span>`).join('')}
       </div>
       <div style="display:flex;gap:6px;margin-top:4px;">
@@ -768,6 +835,7 @@ function renderDetail() {
           </div>`).join('') : `<span style="font-size:11px;color:var(--text3)">Sin compatibles aún</span>`}
       </div>
     </div>
+    <button onclick="selectedSong=null;renderAll();" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:0 4px;line-height:1;align-self:flex-start;" title="Cerrar (Esc)">×</button>
   </div>`;
 }
 
@@ -779,8 +847,14 @@ function toggle(type, val) {
 }
 
 function clearFilters() {
-  filters = { genres: [], camelot: [], tags: [], search: '' };
+  filters = { genres: [], camelot: [], tags: [], search: '', energyMin: 0, energyMax: 100 };
+  sortBy = 'created_at';
   document.getElementById('localSearch').value = '';
+  document.getElementById('energyMin').value = 0;
+  document.getElementById('energyMax').value = 100;
+  document.getElementById('energyMinVal').textContent = '0%';
+  document.getElementById('energyMaxVal').textContent = '100%';
+  document.getElementById('sortSelect').value = 'created_at';
   selectedSong = null;
   renderAll();
 }
@@ -874,7 +948,7 @@ function closeSongModal() { document.getElementById('songModal').classList.add('
 async function addTagQuick() {
   const input = document.getElementById('newTagInput');
   const name = input.value.trim(); if (!name) return;
-  await sb.post('tags', { name });
+  await sb.post('tags', { name, category: null });
   input.value = '';
   await loadData(); renderAll(); toast(`Tag "${name}" creado`);
 }
@@ -885,17 +959,26 @@ function openManageTags() {
 }
 
 function renderTagsModal() {
-  document.getElementById('tagsModalList').innerHTML = tags.length
-    ? tags.map(t => `<div class="edit-tag-row">
+  const cats = [...new Set(tags.map(t => t.category || ''))].sort();
+  let html = '';
+  cats.forEach(cat => {
+    const catTags = tags.filter(t => (t.category || '') === cat);
+    if (cat) html += `<div style="font-size:10px;letter-spacing:0.1em;color:var(--text3);text-transform:uppercase;margin:10px 0 5px;">${esc(cat)}</div>`;
+    catTags.forEach(t => {
+      html += `<div class="edit-tag-row">
         <span class="edit-tag-name">${esc(t.name)}</span>
+        ${cat ? `<span style="font-size:10px;color:var(--text3);margin-right:auto;margin-left:8px;">${esc(cat)}</span>` : ''}
         <button class="edit-tag-del" onclick="deleteTag('${t.id}')">Eliminar</button>
-      </div>`).join('')
-    : `<p style="font-size:11px;color:var(--text3);padding:8px 0;">Sin tags todavía.</p>`;
+      </div>`;
+    });
+  });
+  document.getElementById('tagsModalList').innerHTML = html || `<p style="font-size:11px;color:var(--text3);padding:8px 0;">Sin tags todavía.</p>`;
 }
 
 async function saveNewTag() {
   const name = document.getElementById('mt_name').value.trim(); if (!name) return;
-  await sb.post('tags', { name });
+  const category = document.getElementById('mt_category').value || null;
+  await sb.post('tags', { name, category });
   document.getElementById('mt_name').value = '';
   await loadData(); renderAll(); renderTagsModal(); toast(`Tag "${name}" creado`);
 }
@@ -990,7 +1073,7 @@ async function importTrack(id, title, artist, album, cover) {
 }
 
 // ── CSV IMPORT ──
-async function importCSV(input) {
+async function importCSV(input, mode = 'import') {
   const file = input.files[0];
   if (!file) return;
   const text = await file.text();
@@ -1001,7 +1084,7 @@ async function importCSV(input) {
   const iName = col('Track Name'), iArtist = col('Artist Name(s)');
   const iAlbum = col('Album Name'), iTempo = col('Tempo');
   const iKey = col('Key'), iMode = col('Mode'), iEnergy = col('Energy');
-  const iSpotifyURI = col('Track URI');
+  const iSpotifyURI = col('Track URI'), iGenres = col('Genres');
 
   if (iName === -1 || iArtist === -1) { toast('Formato de CSV no reconocido'); return; }
 
@@ -1023,9 +1106,39 @@ async function importCSV(input) {
   const existingSpIds = new Set(songs.map(s => s.spotify_id).filter(Boolean));
   const existingTitles = new Set(songs.map(s => `${s.title}__${s.artist}`));
 
-  let imported = 0, skipped = 0;
-  toast(`Importando ${rows.length} canciones...`);
+  // ── MODE: UPDATE GENRES ONLY ──
+  if (mode === 'genres') {
+    toast('Actualizando géneros...');
+    let updated = 0, notFound = 0;
+    for (const row of rows) {
+      const spotifyId = iSpotifyURI !== -1 ? (row[iSpotifyURI] || '').replace('spotify:track:', '') : null;
+      const title = row[iName] || '';
+      const artist = row[iArtist] || '';
+      const genreRaw = iGenres !== -1 ? (row[iGenres] || '') : '';
+      const genre = genreRaw ? genreRaw.split(',')[0].trim() : null;
+      if (!genre) continue;
 
+      // Find matching song by spotify_id first, then by title+artist
+      let match = spotifyId ? songs.find(s => s.spotify_id === spotifyId) : null;
+      if (!match) match = songs.find(s => s.title === title && s.artist === artist);
+
+      if (match) {
+        await sb.patch('songs', match.id, { genre });
+        updated++;
+      } else {
+        notFound++;
+      }
+    }
+    await loadData(); renderAll();
+    toast(`${updated} géneros actualizados · ${notFound} no encontradas`);
+    input.value = '';
+    return;
+  }
+
+  // ── MODE: IMPORT ──
+  toast(`Procesando ${rows.length} canciones...`);
+
+  const toInsert = [];
   for (const row of rows) {
     const spotifyId = iSpotifyURI !== -1 ? (row[iSpotifyURI] || '').replace('spotify:track:', '') : null;
     if (spotifyId && existingSpIds.has(spotifyId)) { skipped++; continue; }
@@ -1041,21 +1154,31 @@ async function importCSV(input) {
     const camKey = (keyNum !== null && keyNum !== '' && mode !== null && mode !== '')
       ? (PITCH_TO_CAM[`${keyNum}_${mode}`] || null) : null;
     const energy = iEnergy !== -1 ? parseFloat(row[iEnergy]) : null;
+    const genreRaw = iGenres !== -1 ? (row[iGenres] || '') : '';
+    const genre = genreRaw ? genreRaw.split(',')[0].trim() : null;
 
-    await sb.post('songs', {
+    toInsert.push({
       spotify_id: spotifyId || null,
       title,
       artist,
       album: iAlbum !== -1 ? (row[iAlbum] || null) : null,
+      genre: genre || null,
       bpm: tempo && !isNaN(tempo) ? Math.round(tempo) : null,
       camelot_key: camKey,
       energy: energy && !isNaN(energy) ? energy : null,
       cover_url: null
     });
-
-    imported++;
     existingTitles.add(key);
     if (spotifyId) existingSpIds.add(spotifyId);
+  }
+
+  // Insert in batches of 50
+  const batchSize = 50;
+  for (let i = 0; i < toInsert.length; i += batchSize) {
+    const batch = toInsert.slice(i, i + batchSize);
+    await sb.post('songs', batch);
+    imported += batch.length;
+    toast(`Importando... ${imported} / ${toInsert.length}`);
   }
 
   await loadData(); renderAll();
@@ -1215,6 +1338,55 @@ function toast(msg) {
   el.textContent = msg; el.classList.remove('hidden');
   clearTimeout(window._toastTimer);
   window._toastTimer = setTimeout(() => el.classList.add('hidden'), 2800);
+}
+
+// ── KEYBOARD NAVIGATION ──
+document.addEventListener('keydown', e => {
+  // Ignore if typing in an input
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+
+  const fs = filtered();
+  if (!fs.length) return;
+
+  if (e.key === 'Escape') {
+    selectedSong = null; renderAll(); return;
+  }
+
+  if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    if (!selectedSong) { selectedSong = fs[0]; }
+    else {
+      const idx = fs.findIndex(s => s.id === selectedSong.id);
+      if (idx < fs.length - 1) selectedSong = fs[idx + 1];
+    }
+    renderAll();
+    scrollToSelected();
+    return;
+  }
+
+  if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+    e.preventDefault();
+    if (!selectedSong) { selectedSong = fs[fs.length - 1]; }
+    else {
+      const idx = fs.findIndex(s => s.id === selectedSong.id);
+      if (idx > 0) selectedSong = fs[idx - 1];
+    }
+    renderAll();
+    scrollToSelected();
+    return;
+  }
+
+  if ((e.key === 'Backspace' || e.key === 'Delete') && selectedSong) {
+    e.preventDefault();
+    deleteSong(selectedSong.id);
+    return;
+  }
+});
+
+function scrollToSelected() {
+  if (!selectedSong) return;
+  const el = document.querySelector('.song-pill.selected');
+  if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
 // ── INIT ──
