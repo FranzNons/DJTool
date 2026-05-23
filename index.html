@@ -394,6 +394,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text1); font-fami
       <div class="spotify-results hidden" id="spResults"></div>
     </div>
     <button class="topbar-import-btn" onclick="openPlaylistImport()">↓ Importar playlist</button>
+    <label class="topbar-import-btn" style="cursor:pointer;">↓ Importar CSV <input type="file" accept=".csv" style="display:none;" onchange="importCSV(this)" /></label>
     <div class="topbar-spacer"></div>
     <div class="topbar-user">
       <div class="user-avatar" id="userAvatar"></div>
@@ -986,6 +987,80 @@ async function importTrack(id, title, artist, album, cover) {
     openEditSong(newSong.id);
   }
   toast(`"${title}" importada${prefill.camelot_key ? ' · '+prefill.camelot_key : ''}`);
+}
+
+// ── CSV IMPORT ──
+async function importCSV(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const text = await file.text();
+  const lines = text.split('\n').filter(l => l.trim());
+  const header = lines[0].split(',').map(h => h.replace(/^\uFEFF/, '').replace(/"/g,'').trim());
+
+  const col = name => header.indexOf(name);
+  const iName = col('Track Name'), iArtist = col('Artist Name(s)');
+  const iAlbum = col('Album Name'), iTempo = col('Tempo');
+  const iKey = col('Key'), iMode = col('Mode'), iEnergy = col('Energy');
+  const iSpotifyURI = col('Track URI');
+
+  if (iName === -1 || iArtist === -1) { toast('Formato de CSV no reconocido'); return; }
+
+  // Parse CSV rows respecting quoted fields
+  function parseRow(line) {
+    const result = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQ = !inQ; }
+      else if (c === ',' && !inQ) { result.push(cur.trim()); cur = ''; }
+      else { cur += c; }
+    }
+    result.push(cur.trim());
+    return result;
+  }
+
+  const rows = lines.slice(1).map(parseRow).filter(r => r[iName]);
+  const existingSpIds = new Set(songs.map(s => s.spotify_id).filter(Boolean));
+  const existingTitles = new Set(songs.map(s => `${s.title}__${s.artist}`));
+
+  let imported = 0, skipped = 0;
+  toast(`Importando ${rows.length} canciones...`);
+
+  for (const row of rows) {
+    const spotifyId = iSpotifyURI !== -1 ? (row[iSpotifyURI] || '').replace('spotify:track:', '') : null;
+    if (spotifyId && existingSpIds.has(spotifyId)) { skipped++; continue; }
+
+    const title = row[iName] || '';
+    const artist = row[iArtist] || '';
+    const key = `${title}__${artist}`;
+    if (existingTitles.has(key)) { skipped++; continue; }
+
+    const tempo = iTempo !== -1 ? parseFloat(row[iTempo]) : null;
+    const keyNum = iKey !== -1 ? row[iKey] : null;
+    const mode = iMode !== -1 ? row[iMode] : null;
+    const camKey = (keyNum !== null && keyNum !== '' && mode !== null && mode !== '')
+      ? (PITCH_TO_CAM[`${keyNum}_${mode}`] || null) : null;
+    const energy = iEnergy !== -1 ? parseFloat(row[iEnergy]) : null;
+
+    await sb.post('songs', {
+      spotify_id: spotifyId || null,
+      title,
+      artist,
+      album: iAlbum !== -1 ? (row[iAlbum] || null) : null,
+      bpm: tempo && !isNaN(tempo) ? Math.round(tempo) : null,
+      camelot_key: camKey,
+      energy: energy && !isNaN(energy) ? energy : null,
+      cover_url: null
+    });
+
+    imported++;
+    existingTitles.add(key);
+    if (spotifyId) existingSpIds.add(spotifyId);
+  }
+
+  await loadData(); renderAll();
+  toast(`${imported} canciones importadas · ${skipped} duplicadas omitidas`);
+  input.value = '';
 }
 
 // ── PLAYLIST IMPORT ──
