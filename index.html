@@ -362,7 +362,34 @@ html, body { height: 100%; background: var(--bg); color: var(--text1); font-fami
 .progress-bar { height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.3s; width: 0%; }
 
 
-.toast {
+/* ── BULK ACTION BAR ── */
+.bulk-bar {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--bg2); border: 1px solid var(--accent-border);
+  border-radius: var(--radius-lg); padding: 10px 16px;
+  display: flex; align-items: center; gap: 16px; z-index: 400;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  animation: slideup 0.2s ease;
+}
+.bulk-bar.hidden { display: none; }
+@keyframes slideup { from { opacity:0; transform:translateX(-50%) translateY(12px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+.bulk-count { font-size: 12px; color: var(--accent); font-weight: 500; white-space: nowrap; }
+.bulk-actions { display: flex; gap: 8px; }
+.bulk-btn {
+  background: var(--bg3); border: 1px solid var(--border2); border-radius: var(--radius);
+  padding: 6px 14px; font-size: 11px; font-family: var(--mono); color: var(--text2);
+  cursor: pointer; transition: all 0.12s;
+}
+.bulk-btn:hover { border-color: var(--accent-border); color: var(--accent); }
+.bulk-btn-danger:hover { border-color: var(--red) !important; color: var(--red) !important; }
+.bulk-close {
+  background: none; border: none; font-size: 11px; color: var(--text3);
+  cursor: pointer; font-family: var(--mono); padding: 0;
+}
+.bulk-close:hover { color: var(--text2); }
+.song-pill.multi-selected { border-color: var(--accent-border); background: var(--accent-dim); }
+
+/* ── TOAST ── */
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
   background: var(--bg3); border: 1px solid var(--border2); border-radius: var(--radius);
   padding: 10px 20px; font-size: 12px; color: var(--text2); z-index: 500;
@@ -396,6 +423,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text1); font-fami
     <button class="topbar-import-btn" onclick="openPlaylistImport()">↓ Importar playlist</button>
     <label class="topbar-import-btn" style="cursor:pointer;">↓ Importar CSV <input type="file" accept=".csv" style="display:none;" onchange="importCSV(this,'import')" /></label>
     <label class="topbar-import-btn" style="cursor:pointer;">↻ Actualizar géneros <input type="file" accept=".csv" style="display:none;" onchange="importCSV(this,'genres')" /></label>
+    <button class="topbar-import-btn" id="selectModeBtn" onclick="toggleSelectMode()" style="border-color:var(--border2);">⊞ Seleccionar</button>
     <div class="topbar-spacer"></div>
     <div class="topbar-user">
       <div class="user-avatar" id="userAvatar"></div>
@@ -527,6 +555,30 @@ html, body { height: 100%; background: var(--bg); color: var(--text1); font-fami
   </div>
 </div>
 
+<!-- BULK ACTION BAR -->
+<div class="bulk-bar hidden" id="bulkBar">
+  <span class="bulk-count" id="bulkCount">0 seleccionadas</span>
+  <div class="bulk-actions">
+    <button class="bulk-btn" onclick="openBulkTag()">🏷 Asignar tag</button>
+    <button class="bulk-btn bulk-btn-danger" onclick="bulkDelete()">✕ Eliminar</button>
+  </div>
+  <button class="bulk-close" onclick="toggleSelectMode()">Salir</button>
+</div>
+
+<!-- MODAL: BULK TAG -->
+<div class="modal-overlay hidden" id="bulkTagModal">
+  <div class="modal" style="width:340px;">
+    <div class="modal-title">Asignar tags a selección</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:12px;" id="bulkTagSubtitle"></div>
+    <div class="modal-tags-grid" id="bulkTagGrid"></div>
+    <div style="font-size:11px;color:var(--text3);margin-top:10px;">Los tags seleccionados se agregarán a todas las canciones marcadas sin quitar los que ya tienen.</div>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeModal('bulkTagModal')">Cancelar</button>
+      <button class="modal-save" onclick="saveBulkTags()">Aplicar</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 
 <div class="toast hidden" id="toast"></div>
@@ -553,10 +605,12 @@ const PITCH_TO_CAM = {
 let spotifyToken = null;
 let songs = [], tags = [], songTags = [];
 let filters = { genres: [], camelot: [], tags: [], search: '', energyMin: 0, energyMax: 100 };
-let sortBy = 'created_at'; // 'created_at' | 'title' | 'artist' | 'bpm' | 'camelot'
+let sortBy = 'created_at';
 let selectedSong = null;
 let editingSongId = null;
 let spSearchTimer = null;
+let selectMode = false;
+let multiSelected = new Set(); // song ids
 
 // ── SUPABASE ──
 const sb = {
@@ -765,7 +819,8 @@ function renderSongs() {
   } else {
     document.getElementById('songsGrid').innerHTML = fs.map(s => {
       const isSelected = selectedSong && selectedSong.id === s.id;
-      return `<div class="song-pill ${isSelected?'selected':''}" onclick="selectSong('${s.id}')">
+      const isMulti = multiSelected.has(s.id);
+      return `<div class="song-pill ${isSelected?'selected':''} ${isMulti?'multi-selected':''}" onclick="selectSong('${s.id}')">
         <div class="song-cover">${s.cover_url ? `<img src="${s.cover_url}" alt="" loading="lazy" />` : '♪'}</div>
         <div class="song-info">
           <span class="song-name">${esc(s.title)}</span>
@@ -1316,9 +1371,90 @@ async function importPlaylist(playlistId, playlistName, totalTracks) {
 
 // ── SELECT ──
 function selectSong(id) {
+  if (selectMode) {
+    if (multiSelected.has(id)) multiSelected.delete(id);
+    else multiSelected.add(id);
+    updateBulkBar();
+    renderSongs();
+    return;
+  }
   const song = songs.find(s => s.id === id);
   selectedSong = selectedSong && selectedSong.id === id ? null : song;
   renderAll();
+}
+
+// ── SELECTION MODE ──
+function toggleSelectMode() {
+  selectMode = !selectMode;
+  multiSelected.clear();
+  selectedSong = null;
+  const btn = document.getElementById('selectModeBtn');
+  if (selectMode) {
+    btn.style.background = 'var(--accent-dim)';
+    btn.style.borderColor = 'var(--accent-border)';
+    btn.style.color = 'var(--accent)';
+    btn.textContent = '⊞ Seleccionando...';
+  } else {
+    btn.style.background = '';
+    btn.style.borderColor = 'var(--border2)';
+    btn.style.color = '';
+    btn.textContent = '⊞ Seleccionar';
+    document.getElementById('bulkBar').classList.add('hidden');
+  }
+  renderSongs();
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulkBar');
+  const count = multiSelected.size;
+  if (count === 0) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  document.getElementById('bulkCount').textContent = `${count} canción${count !== 1 ? 'es' : ''} seleccionada${count !== 1 ? 's' : ''}`;
+}
+
+function openBulkTag() {
+  if (!multiSelected.size) return;
+  document.getElementById('bulkTagSubtitle').textContent = `Se aplicará a ${multiSelected.size} canciones`;
+  document.getElementById('bulkTagGrid').innerHTML = tags.map(t =>
+    `<span class="mtag" data-id="${t.id}" onclick="this.classList.toggle('selected')">${esc(t.name)}</span>`
+  ).join('');
+  document.getElementById('bulkTagModal').classList.remove('hidden');
+}
+
+async function saveBulkTags() {
+  const selTags = [...document.querySelectorAll('#bulkTagGrid .mtag.selected')].map(el => el.dataset.id);
+  if (!selTags.length) { closeModal('bulkTagModal'); return; }
+
+  for (const songId of multiSelected) {
+    const existing = songTags.filter(st => st.song_id === songId).map(st => st.tag_id);
+    for (const tid of selTags) {
+      if (!existing.includes(tid)) {
+        await sb.post('song_tags', { song_id: songId, tag_id: tid });
+      }
+    }
+  }
+
+  await loadData();
+  closeModal('bulkTagModal');
+  toast(`Tags aplicados a ${multiSelected.size} canciones`);
+  renderAll();
+}
+
+async function bulkDelete() {
+  const count = multiSelected.size;
+  if (!count) return;
+  if (!confirm(`¿Eliminar ${count} canción${count !== 1 ? 'es' : ''}? Esta acción no se puede deshacer.`)) return;
+
+  for (const id of multiSelected) {
+    await sb.deleteWhere('song_tags', 'song_id', id);
+    await sb.delete('songs', id);
+  }
+
+  multiSelected.clear();
+  await loadData();
+  toggleSelectMode();
+  renderAll();
+  toast(`${count} canciones eliminadas`);
 }
 
 // ── EXPORT ──
@@ -1349,6 +1485,7 @@ document.addEventListener('keydown', e => {
   if (!fs.length) return;
 
   if (e.key === 'Escape') {
+    if (selectMode) { toggleSelectMode(); return; }
     selectedSong = null; renderAll(); return;
   }
 
@@ -1376,7 +1513,13 @@ document.addEventListener('keydown', e => {
     return;
   }
 
-  if ((e.key === 'Backspace' || e.key === 'Delete') && selectedSong) {
+  if ((e.key === 'Backspace' || e.key === 'Delete') && selectMode && multiSelected.size) {
+    e.preventDefault();
+    bulkDelete();
+    return;
+  }
+
+  if ((e.key === 'Backspace' || e.key === 'Delete') && selectedSong && !selectMode) {
     e.preventDefault();
     deleteSong(selectedSong.id);
     return;
