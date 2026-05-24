@@ -338,7 +338,80 @@ html, body { height: 100%; background: var(--bg); color: var(--text1); font-fami
 }
 .edit-tag-del:hover { border-color: var(--red); color: var(--red); }
 
-/* ── PLAYLIST IMPORT ── */
+/* ── SIDEBAR TOGGLES ── */
+.sidebar-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer; user-select: none; padding: 2px 0;
+}
+.sidebar-toggle:hover .sidebar-label { color: var(--text2); }
+.toggle-arrow { font-size: 10px; color: var(--text3); transition: transform 0.15s; }
+.section-body { overflow: hidden; }
+.section-body.hidden { display: none; }
+
+/* ── PLAYLIST PANEL ── */
+.playlist-panel {
+  width: 280px; min-width: 280px; border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; background: var(--bg);
+}
+.playlist-panel.hidden { display: none; }
+.playlist-panel-header {
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: flex-start; gap: 10px; flex-shrink: 0;
+}
+.playlist-panel-title { font-family: var(--sans); font-size: 14px; font-weight: 600; color: var(--text1); }
+.playlist-panel-meta { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.playlist-panel-close {
+  background: none; border: none; color: var(--text3); cursor: pointer;
+  font-size: 18px; padding: 0; line-height: 1; flex-shrink: 0;
+}
+.playlist-panel-close:hover { color: var(--text2); }
+.playlist-panel-body { flex: 1; overflow-y: auto; padding: 10px; }
+.playlist-panel-footer {
+  padding: 12px 16px; border-top: 1px solid var(--border);
+  display: flex; gap: 8px; align-items: center; flex-shrink: 0;
+}
+
+/* playlist track rows */
+.pl-track {
+  display: flex; align-items: center; gap: 8px; padding: 7px 8px;
+  border: 1px solid transparent; border-radius: var(--radius);
+  cursor: grab; transition: all 0.12s; margin-bottom: 3px;
+  background: var(--bg2);
+}
+.pl-track:hover { border-color: var(--border2); }
+.pl-track.drag-over { border-color: var(--accent-border); background: var(--accent-dim); }
+.pl-track.dragging { opacity: 0.4; }
+.pl-track-num { font-size: 10px; color: var(--text3); width: 18px; text-align: right; flex-shrink: 0; }
+.pl-track-info { flex: 1; min-width: 0; }
+.pl-track-name { font-size: 12px; color: var(--text1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-track-artist { font-size: 10px; color: var(--text3); }
+.pl-track-cam { font-size: 10px; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
+.pl-track-cam.has-key { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-border); }
+.pl-track-del {
+  background: none; border: none; color: var(--text3); cursor: pointer;
+  font-size: 13px; padding: 0 2px; opacity: 0; transition: opacity 0.12s;
+}
+.pl-track:hover .pl-track-del { opacity: 1; }
+.pl-track-del:hover { color: var(--red); }
+.pl-compat { font-size: 10px; color: var(--accent); padding: 2px 8px; display: flex; align-items: center; gap: 4px; }
+.pl-compat.warn { color: #e8a040; }
+.pl-empty { font-size: 12px; color: var(--text3); text-align: center; padding: 2rem; line-height: 2; }
+
+/* sidebar playlist items */
+.pl-sidebar-item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  cursor: pointer; transition: all 0.12s; font-size: 11px; color: var(--text2);
+}
+.pl-sidebar-item:hover { border-color: var(--border2); color: var(--text1); }
+.pl-sidebar-item.active { border-color: var(--accent-border); color: var(--accent); background: var(--accent-dim); }
+.pl-sidebar-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-sidebar-count { font-size: 10px; color: var(--text3); }
+
+/* drag-drop highlight on song pills */
+.song-pill.drop-target { border-color: var(--accent) !important; background: var(--accent-dim) !important; }
+
+
 .playlist-item {
   display: flex; align-items: center; gap: 10px; padding: 8px 10px;
   border: 1px solid var(--border); border-radius: var(--radius);
@@ -434,51 +507,101 @@ html, body { height: 100%; background: var(--bg); color: var(--text1); font-fami
 
   <div class="main-layout">
     <div class="sidebar">
+      <!-- Search always visible -->
       <div class="sidebar-section">
-        <div class="sidebar-label">Búsqueda local</div>
         <input type="text" id="localSearch" placeholder="Filtrar biblioteca..." style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);padding:6px 10px;font-size:11px;font-family:var(--mono);color:var(--text1);outline:none;" />
       </div>
-      <div class="sidebar-section">
-        <div class="sidebar-label">Ordenar por</div>
-        <select id="sortSelect" onchange="sortBy=this.value;renderSongs()" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);padding:6px 10px;font-size:11px;font-family:var(--mono);color:var(--text1);outline:none;">
-          <option value="created_at">Más recientes</option>
-          <option value="title">Nombre A–Z</option>
-          <option value="artist">Artista A–Z</option>
-          <option value="bpm">BPM ↑</option>
-          <option value="camelot">Camelot</option>
-        </select>
+
+      <!-- Ordenar -->
+      <div class="sidebar-section collapsible" id="sec-sort">
+        <div class="sidebar-toggle" onclick="toggleSection('sort')">
+          <span class="sidebar-label" style="margin:0">Ordenar</span>
+          <span class="toggle-arrow" id="arr-sort">▾</span>
+        </div>
+        <div class="section-body" id="body-sort">
+          <select id="sortSelect" onchange="sortBy=this.value;renderSongs()" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);padding:6px 10px;font-size:11px;font-family:var(--mono);color:var(--text1);outline:none;margin-top:8px;">
+            <option value="created_at">Más recientes</option>
+            <option value="title_asc">Nombre A–Z</option>
+            <option value="title_desc">Nombre Z–A</option>
+            <option value="artist_asc">Artista A–Z</option>
+            <option value="artist_desc">Artista Z–A</option>
+            <option value="bpm_asc">BPM ↑</option>
+            <option value="bpm_desc">BPM ↓</option>
+            <option value="energy_asc">Energy ↑</option>
+            <option value="energy_desc">Energy ↓</option>
+            <option value="camelot">Camelot</option>
+          </select>
+        </div>
       </div>
-      <div class="sidebar-section">
-        <div class="sidebar-label">Género</div>
-        <div class="pills" id="genrePills"></div>
+
+      <!-- Género -->
+      <div class="sidebar-section collapsible" id="sec-genre">
+        <div class="sidebar-toggle" onclick="toggleSection('genre')">
+          <span class="sidebar-label" style="margin:0">Género</span>
+          <span class="toggle-arrow" id="arr-genre">▾</span>
+        </div>
+        <div class="section-body" id="body-genre">
+          <div class="pills" id="genrePills" style="margin-top:8px;"></div>
+        </div>
       </div>
-      <div class="sidebar-section">
-        <div class="sidebar-label">Camelot</div>
-        <div class="cam-grid" id="camelotGrid"></div>
+
+      <!-- Camelot -->
+      <div class="sidebar-section collapsible" id="sec-camelot">
+        <div class="sidebar-toggle" onclick="toggleSection('camelot')">
+          <span class="sidebar-label" style="margin:0">Camelot</span>
+          <span class="toggle-arrow" id="arr-camelot">▾</span>
+        </div>
+        <div class="section-body" id="body-camelot">
+          <div class="cam-grid" id="camelotGrid" style="margin-top:8px;"></div>
+        </div>
       </div>
-      <div class="sidebar-section">
-        <div class="sidebar-label">Energy <span id="energyMinVal" style="color:var(--accent)">0%</span> — <span id="energyMaxVal" style="color:var(--accent)">100%</span></div>
-        <div style="display:flex;flex-direction:column;gap:8px;">
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span style="font-size:10px;color:var(--text3);width:20px;">Min</span>
-            <input type="range" id="energyMin" min="0" max="100" value="0" style="flex:1;accent-color:var(--accent);" oninput="filters.energyMin=+this.value;document.getElementById('energyMinVal').textContent=this.value+'%';renderSongs()" />
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span style="font-size:10px;color:var(--text3);width:20px;">Max</span>
-            <input type="range" id="energyMax" min="0" max="100" value="100" style="flex:1;accent-color:var(--accent);" oninput="filters.energyMax=+this.value;document.getElementById('energyMaxVal').textContent=this.value+'%';renderSongs()" />
+
+      <!-- Energy -->
+      <div class="sidebar-section collapsible" id="sec-energy">
+        <div class="sidebar-toggle" onclick="toggleSection('energy')">
+          <span class="sidebar-label" style="margin:0">Energy <span id="energyMinVal" style="color:var(--accent);font-weight:400;">0%</span>–<span id="energyMaxVal" style="color:var(--accent);font-weight:400;">100%</span></span>
+          <span class="toggle-arrow" id="arr-energy">▾</span>
+        </div>
+        <div class="section-body" id="body-energy">
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:10px;color:var(--text3);width:20px;">Min</span>
+              <input type="range" id="energyMin" min="0" max="100" value="0" style="flex:1;accent-color:var(--accent);" oninput="filters.energyMin=+this.value;document.getElementById('energyMinVal').textContent=this.value+'%';renderSongs()" />
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:10px;color:var(--text3);width:20px;">Max</span>
+              <input type="range" id="energyMax" min="0" max="100" value="100" style="flex:1;accent-color:var(--accent);" oninput="filters.energyMax=+this.value;document.getElementById('energyMaxVal').textContent=this.value+'%';renderSongs()" />
+            </div>
           </div>
         </div>
       </div>
-      <div class="sidebar-section">
-        <div class="sidebar-label">Tags</div>
-        <div class="pills" id="tagPills"></div>
-        <div class="tag-row">
-          <input type="text" id="newTagInput" placeholder="Nuevo tag..." />
-          <button onclick="addTagQuick()" title="Agregar tag">+</button>
+
+      <!-- Tags -->
+      <div class="sidebar-section collapsible" id="sec-tags">
+        <div class="sidebar-toggle" onclick="toggleSection('tags')">
+          <span class="sidebar-label" style="margin:0">Tags</span>
+          <span class="toggle-arrow" id="arr-tags">▾</span>
+        </div>
+        <div class="section-body" id="body-tags">
+          <div class="pills" id="tagPills" style="margin-top:8px;"></div>
+          <div class="tag-row" style="margin-top:8px;">
+            <input type="text" id="newTagInput" placeholder="Nuevo tag..." />
+            <button onclick="addTagQuick()" title="Agregar tag">+</button>
+          </div>
+          <button onclick="openManageTags()" style="background:none;border:1px solid var(--border);border-radius:var(--radius);padding:5px 10px;font-size:10px;font-family:var(--mono);color:var(--text3);cursor:pointer;width:100%;transition:all 0.12s;margin-top:8px;" onmouseover="this.style.color='var(--text2)'" onmouseout="this.style.color='var(--text3)'">Administrar tags</button>
         </div>
       </div>
-      <div class="sidebar-section" style="border-bottom:none;">
-        <button onclick="openManageTags()" style="background:none;border:1px solid var(--border);border-radius:var(--radius);padding:5px 10px;font-size:10px;font-family:var(--mono);color:var(--text3);cursor:pointer;width:100%;transition:all 0.12s;" onmouseover="this.style.color='var(--text2)'" onmouseout="this.style.color='var(--text3)'">Administrar tags</button>
+
+      <!-- Playlists -->
+      <div class="sidebar-section collapsible" id="sec-playlists" style="border-bottom:none;">
+        <div class="sidebar-toggle" onclick="toggleSection('playlists')">
+          <span class="sidebar-label" style="margin:0">Playlists</span>
+          <span class="toggle-arrow" id="arr-playlists">▸</span>
+        </div>
+        <div class="section-body hidden" id="body-playlists">
+          <div id="playlistsList" style="margin-top:8px;display:flex;flex-direction:column;gap:4px;"></div>
+          <button onclick="createPlaylist()" style="background:none;border:1px solid var(--accent-border);border-radius:var(--radius);padding:5px 10px;font-size:10px;font-family:var(--mono);color:var(--accent);cursor:pointer;width:100%;transition:all 0.12s;margin-top:8px;">+ Nueva playlist</button>
+        </div>
       </div>
     </div>
 
@@ -493,6 +616,22 @@ html, body { height: 100%; background: var(--bg); color: var(--text1); font-fami
         <div class="songs-grid" id="songsGrid"></div>
       </div>
       <div class="detail-panel hidden" id="detailPanel"></div>
+    </div>
+
+    <!-- PLAYLIST PANEL -->
+    <div class="playlist-panel hidden" id="playlistPanel">
+      <div class="playlist-panel-header">
+        <div style="flex:1;min-width:0;">
+          <div class="playlist-panel-title" id="playlistPanelTitle">Playlist</div>
+          <div class="playlist-panel-meta" id="playlistPanelMeta"></div>
+        </div>
+        <button class="playlist-panel-close" onclick="closePlaylistPanel()">×</button>
+      </div>
+      <div class="playlist-panel-body" id="playlistPanelBody"></div>
+      <div class="playlist-panel-footer">
+        <button class="export-btn" style="margin:0;" onclick="exportCurrentPlaylist()">↗ Exportar</button>
+        <button class="remove-song-btn" onclick="deleteCurrentPlaylist()">Eliminar playlist</button>
+      </div>
     </div>
   </div>
 </div>
@@ -610,7 +749,11 @@ let selectedSong = null;
 let editingSongId = null;
 let spSearchTimer = null;
 let selectMode = false;
-let multiSelected = new Set(); // song ids
+let multiSelected = new Set();
+let playlists = [];
+let playlistSongs = [];
+let activePlaylistId = null;
+let dragSrcIndex = null;
 
 // ── SUPABASE ──
 const sb = {
@@ -723,16 +866,24 @@ async function launch(token) {
   }
   await loadData();
   renderAll();
+  initSections();
   setupSearch();
 }
 
 // ── DATA ──
 async function loadData() {
-  [songs, tags, songTags] = await Promise.all([
+  [songs, tags, songTags, playlists, playlistSongs] = await Promise.all([
     sb.get('songs', 'select=*&order=created_at.desc'),
     sb.get('tags', 'select=*&order=name.asc'),
-    sb.get('song_tags', 'select=*')
+    sb.get('song_tags', 'select=*'),
+    sb.get('playlists', 'select=*&order=created_at.desc'),
+    sb.get('playlist_songs', 'select=*&order=position.asc')
   ]);
+  if (!Array.isArray(songs)) songs = [];
+  if (!Array.isArray(tags)) tags = [];
+  if (!Array.isArray(songTags)) songTags = [];
+  if (!Array.isArray(playlists)) playlists = [];
+  if (!Array.isArray(playlistSongs)) playlistSongs = [];
 }
 
 function getTagsForSong(songId) {
@@ -754,7 +905,7 @@ function camelotCompat(key) {
 }
 
 // ── RENDER ──
-function renderAll() { renderSidebar(); renderSongs(); }
+function renderAll() { renderSidebar(); renderSongs(); renderSidebarPlaylists(); }
 
 function renderSidebar() {
   const genres = getGenres();
@@ -800,11 +951,16 @@ function filtered() {
   });
 
   result.sort((a, b) => {
-    if (sortBy === 'title') return (a.title||'').localeCompare(b.title||'');
-    if (sortBy === 'artist') return (a.artist||'').localeCompare(b.artist||'');
-    if (sortBy === 'bpm') return (a.bpm||0) - (b.bpm||0);
+    if (sortBy === 'title_asc') return (a.title||'').localeCompare(b.title||'');
+    if (sortBy === 'title_desc') return (b.title||'').localeCompare(a.title||'');
+    if (sortBy === 'artist_asc') return (a.artist||'').localeCompare(b.artist||'');
+    if (sortBy === 'artist_desc') return (b.artist||'').localeCompare(a.artist||'');
+    if (sortBy === 'bpm_asc') return (a.bpm||0) - (b.bpm||0);
+    if (sortBy === 'bpm_desc') return (b.bpm||0) - (a.bpm||0);
+    if (sortBy === 'energy_asc') return (a.energy||0) - (b.energy||0);
+    if (sortBy === 'energy_desc') return (b.energy||0) - (a.energy||0);
     if (sortBy === 'camelot') return (a.camelot_key||'').localeCompare(b.camelot_key||'');
-    return 0; // created_at already ordered by DB
+    return 0;
   });
 
   return result;
@@ -820,13 +976,18 @@ function renderSongs() {
     document.getElementById('songsGrid').innerHTML = fs.map(s => {
       const isSelected = selectedSong && selectedSong.id === s.id;
       const isMulti = multiSelected.has(s.id);
-      return `<div class="song-pill ${isSelected?'selected':''} ${isMulti?'multi-selected':''}" onclick="selectSong('${s.id}')">
+      const inActivePlaylist = activePlaylistId && playlistSongs.some(ps => ps.playlist_id === activePlaylistId && ps.song_id === s.id);
+      return `<div class="song-pill ${isSelected?'selected':''} ${isMulti?'multi-selected':''} ${inActivePlaylist?'in-set':''}"
+        onclick="selectSong('${s.id}')"
+        draggable="${activePlaylistId?'true':'false'}"
+        ondragstart="songDragStart(event,'${s.id}')">
         <div class="song-cover">${s.cover_url ? `<img src="${s.cover_url}" alt="" loading="lazy" />` : '♪'}</div>
         <div class="song-info">
           <span class="song-name">${esc(s.title)}</span>
           <span class="song-sub">${esc(s.artist)}${s.bpm?' · '+s.bpm+' bpm':''}</span>
         </div>
         ${s.camelot_key ? `<span class="song-cam has-key">${s.camelot_key}</span>` : ''}
+        ${activePlaylistId && !inActivePlaylist ? `<span onclick="event.stopPropagation();addSongToPlaylist('${s.id}')" style="font-size:13px;color:var(--accent);cursor:pointer;padding:0 2px;flex-shrink:0;" title="Agregar a playlist">+</span>` : ''}
       </div>`;
     }).join('');
   }
@@ -1455,6 +1616,188 @@ async function bulkDelete() {
   toggleSelectMode();
   renderAll();
   toast(`${count} canciones eliminadas`);
+}
+
+// ── SIDEBAR TOGGLES ──
+const sectionState = { sort: true, genre: true, camelot: true, energy: false, tags: true, playlists: false };
+
+function toggleSection(id) {
+  sectionState[id] = !sectionState[id];
+  const body = document.getElementById(`body-${id}`);
+  const arr = document.getElementById(`arr-${id}`);
+  if (sectionState[id]) { body.classList.remove('hidden'); arr.textContent = '▾'; }
+  else { body.classList.add('hidden'); arr.textContent = '▸'; }
+}
+
+// init collapsed sections
+function initSections() {
+  Object.entries(sectionState).forEach(([id, open]) => {
+    const body = document.getElementById(`body-${id}`);
+    const arr = document.getElementById(`arr-${id}`);
+    if (!body || !arr) return;
+    if (!open) { body.classList.add('hidden'); arr.textContent = '▸'; }
+    else { body.classList.remove('hidden'); arr.textContent = '▾'; }
+  });
+}
+
+// ── PLAYLISTS ──
+function renderSidebarPlaylists() {
+  const el = document.getElementById('playlistsList');
+  if (!el) return;
+  if (!playlists.length) {
+    el.innerHTML = `<div style="font-size:11px;color:var(--text3);">Sin playlists aún</div>`;
+    return;
+  }
+  el.innerHTML = playlists.map(p => {
+    const count = playlistSongs.filter(ps => ps.playlist_id === p.id).length;
+    return `<div class="pl-sidebar-item ${activePlaylistId===p.id?'active':''}" onclick="openPlaylistPanel('${p.id}')">
+      <span class="pl-sidebar-name">▶ ${esc(p.name)}</span>
+      <span class="pl-sidebar-count">${count}</span>
+    </div>`;
+  }).join('');
+}
+
+async function createPlaylist() {
+  const name = prompt('Nombre de la playlist:');
+  if (!name || !name.trim()) return;
+  await sb.post('playlists', { name: name.trim() });
+  await loadData();
+  renderSidebarPlaylists();
+  toast(`Playlist "${name.trim()}" creada`);
+}
+
+function openPlaylistPanel(id) {
+  activePlaylistId = id;
+  const pl = playlists.find(p => p.id === id);
+  if (!pl) return;
+  document.getElementById('playlistPanel').classList.remove('hidden');
+  document.getElementById('playlistPanelTitle').textContent = pl.name;
+  renderPlaylistPanel();
+  renderSidebarPlaylists();
+}
+
+function closePlaylistPanel() {
+  activePlaylistId = null;
+  document.getElementById('playlistPanel').classList.add('hidden');
+  renderSidebarPlaylists();
+}
+
+function getPlaylistTracks(playlistId) {
+  const pSongs = playlistSongs.filter(ps => ps.playlist_id === playlistId).sort((a,b) => a.position - b.position);
+  return pSongs.map(ps => ({ ps, song: songs.find(s => s.id === ps.song_id) })).filter(x => x.song);
+}
+
+function renderPlaylistPanel() {
+  if (!activePlaylistId) return;
+  const tracks = getPlaylistTracks(activePlaylistId);
+  const meta = `${tracks.length} canción${tracks.length!==1?'es':''}`;
+  document.getElementById('playlistPanelMeta').textContent = meta;
+
+  const body = document.getElementById('playlistPanelBody');
+  if (!tracks.length) {
+    body.innerHTML = `<div class="pl-empty">Sin canciones aún.<br>Arrastra canciones aquí<br>o usa el botón + en cada canción.</div>`;
+    return;
+  }
+
+  body.innerHTML = tracks.map(({ps, song}, i) => {
+    const prev = i > 0 ? tracks[i-1].song : null;
+    const compat = prev && prev.camelot_key && song.camelot_key ? camelotCompat(prev.camelot_key).includes(song.camelot_key) : null;
+    const compatHtml = prev ? `<div class="pl-compat ${compat===false?'warn':''}">
+      ${compat===true?'✓ compatible':compat===false?'⚠ incompatible':''}
+    </div>` : '';
+    return `${i > 0 ? compatHtml : ''}
+    <div class="pl-track" draggable="true"
+      ondragstart="plDragStart(event,${i})"
+      ondragover="plDragOver(event,${i})"
+      ondrop="plDrop(event,${i})"
+      ondragleave="plDragLeave(event)"
+      ondragend="plDragEnd(event)">
+      <span class="pl-track-num">${i+1}</span>
+      <div class="pl-track-info">
+        <div class="pl-track-name">${esc(song.title)}</div>
+        <div class="pl-track-artist">${esc(song.artist)}${song.bpm?' · '+song.bpm+' bpm':''}</div>
+      </div>
+      ${song.camelot_key ? `<span class="pl-track-cam has-key">${song.camelot_key}</span>` : ''}
+      <button class="pl-track-del" onclick="removeFromPlaylist('${ps.id}')" title="Quitar">×</button>
+    </div>`;
+  }).join('');
+}
+
+// drag & drop within playlist
+function plDragStart(e, idx) {
+  dragSrcIndex = idx;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+function plDragOver(e, idx) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.pl-track').forEach(el => el.classList.remove('drag-over'));
+  e.currentTarget.classList.add('drag-over');
+}
+function plDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+function plDragEnd(e) {
+  document.querySelectorAll('.pl-track').forEach(el => { el.classList.remove('dragging'); el.classList.remove('drag-over'); });
+}
+async function plDrop(e, targetIdx) {
+  e.preventDefault();
+  if (dragSrcIndex === null || dragSrcIndex === targetIdx) return;
+  const tracks = getPlaylistTracks(activePlaylistId);
+  const moved = tracks.splice(dragSrcIndex, 1)[0];
+  tracks.splice(targetIdx, 0, moved);
+  // update positions
+  for (let i = 0; i < tracks.length; i++) {
+    await sb.patch('playlist_songs', tracks[i].ps.id, { position: i });
+  }
+  await loadData();
+  renderPlaylistPanel();
+  dragSrcIndex = null;
+}
+
+// drag from library to playlist
+function songDragStart(e, songId) {
+  e.dataTransfer.setData('songId', songId);
+  e.dataTransfer.effectAllowed = 'copy';
+}
+
+async function addSongToPlaylist(songId, playlistId) {
+  const pid = playlistId || activePlaylistId;
+  if (!pid) { toast('Abre una playlist primero'); return; }
+  const existing = playlistSongs.filter(ps => ps.playlist_id === pid);
+  const alreadyIn = existing.find(ps => ps.song_id === songId);
+  if (alreadyIn) { toast('Ya está en la playlist'); return; }
+  const position = existing.length;
+  await sb.post('playlist_songs', { playlist_id: pid, song_id: songId, position });
+  await loadData();
+  renderPlaylistPanel();
+  renderSidebarPlaylists();
+  toast('Canción agregada');
+}
+
+async function removeFromPlaylist(psId) {
+  await sb.delete('playlist_songs', psId);
+  await loadData();
+  renderPlaylistPanel();
+  renderSidebarPlaylists();
+}
+
+async function deleteCurrentPlaylist() {
+  const pl = playlists.find(p => p.id === activePlaylistId);
+  if (!pl) return;
+  if (!confirm(`¿Eliminar la playlist "${pl.name}"?`)) return;
+  await sb.deleteWhere('playlist_songs', 'playlist_id', activePlaylistId);
+  await sb.delete('playlists', activePlaylistId);
+  closePlaylistPanel();
+  await loadData();
+  renderSidebarPlaylists();
+  toast('Playlist eliminada');
+}
+
+function exportCurrentPlaylist() {
+  const tracks = getPlaylistTracks(activePlaylistId);
+  if (!tracks.length) { toast('La playlist está vacía'); return; }
+  const text = tracks.map(({song}, i) => `${i+1}. ${song.title} — ${song.artist}${song.camelot_key?' ['+song.camelot_key+']':''}${song.bpm?' '+song.bpm+'bpm':''}`).join('\n');
+  navigator.clipboard.writeText(text).then(() => toast(`Playlist copiada (${tracks.length} canciones)`));
 }
 
 // ── EXPORT ──
