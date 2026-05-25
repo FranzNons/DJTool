@@ -594,6 +594,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text1); font-fami
     <label class="topbar-import-btn" style="cursor:pointer;">↓ Importar CSV <input type="file" accept=".csv" style="display:none;" onchange="importCSV(this,'import')" /></label>
     <label class="topbar-import-btn" style="cursor:pointer;">↻ Actualizar géneros <input type="file" accept=".csv" style="display:none;" onchange="importCSV(this,'genres')" /></label>
     <button class="topbar-import-btn" id="selectModeBtn" onclick="toggleSelectMode()" style="border-color:var(--border2);">⊞ Seleccionar</button>
+    <button class="topbar-import-btn" onclick="updateCovers()">↻ Portadas</button>
     <div class="topbar-spacer"></div>
     <div class="topbar-user">
       <div class="user-avatar" id="userAvatar"></div>
@@ -1718,6 +1719,40 @@ async function bulkDelete() {
   toggleSelectMode();
   renderAll();
   toast(`${count} canciones eliminadas`);
+}
+
+// ── UPDATE COVERS ──
+async function updateCovers() {
+  const toUpdate = songs.filter(s => s.spotify_id && !s.cover_url);
+  if (!toUpdate.length) { toast('Todas las canciones ya tienen portada'); return; }
+
+  toast(`Actualizando portadas de ${toUpdate.length} canciones...`);
+
+  const batchSize = 50;
+  let updated = 0;
+
+  for (let i = 0; i < toUpdate.length; i += batchSize) {
+    const batch = toUpdate.slice(i, i + batchSize);
+    const ids = batch.map(s => s.spotify_id).join(',');
+    const data = await spFetch(`/tracks?ids=${ids}`);
+    if (!data || !data.tracks) continue;
+
+    for (const track of data.tracks) {
+      if (!track) continue;
+      const cover = track.album?.images?.[1]?.url || track.album?.images?.[0]?.url || null;
+      if (!cover) continue;
+      const song = batch.find(s => s.spotify_id === track.id);
+      if (song) {
+        await sb.patch('songs', song.id, { cover_url: cover });
+        updated++;
+      }
+    }
+    toast(`Portadas: ${updated} / ${toUpdate.length}...`);
+  }
+
+  await loadData();
+  renderAll();
+  toast(`${updated} portadas actualizadas`);
 }
 
 // ── SIDEBAR TOGGLES ──
