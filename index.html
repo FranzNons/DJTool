@@ -1322,6 +1322,14 @@ function setupSearch() {
     spSearchTimer = setTimeout(() => searchSpotify(q), 400);
   });
 
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      input.value = '';
+      results.classList.add('hidden');
+      input.blur();
+    }
+  });
+
   document.addEventListener('click', e => {
     if (!document.getElementById('searchWrap').contains(e.target)) {
       results.classList.add('hidden');
@@ -1358,25 +1366,25 @@ async function importTrack(id, title, artist, album, cover) {
   document.getElementById('spSearch').value = '';
 
   const existing = songs.find(s => s.spotify_id === id);
-  if (existing) { toast('Ya está en tu biblioteca'); return; }
+  if (existing) {
+    if (!existing.cover_url && cover) {
+      await sb.patch('songs', existing.id, { cover_url: cover });
+      await loadData(); renderAll();
+      toast(`Portada actualizada para "${title}"`);
+    } else {
+      toast('Ya está en tu biblioteca');
+    }
+    return;
+  }
 
-  toast('Obteniendo datos de audio...');
+  toast('Importando...');
   const features = await getAudioFeatures(id);
-
-  const prefill = {
-    title, artist, album,
-    bpm: features?.bpm || '',
-    camelot_key: features?.camelot_key || '',
-    spotify_id: id,
-    cover_url: cover,
-    energy: features?.energy || null
-  };
 
   const payload = {
     spotify_id: id,
     title, artist, album: album || null,
-    bpm: prefill.bpm || null,
-    camelot_key: prefill.camelot_key || null,
+    bpm: features?.bpm || null,
+    camelot_key: features?.camelot_key || null,
     cover_url: cover || null,
     energy: features?.energy || null
   };
@@ -1388,7 +1396,7 @@ async function importTrack(id, title, artist, album, cover) {
     selectedSong = songs.find(s => s.id === newSong.id) || null;
     openEditSong(newSong.id);
   }
-  toast(`"${title}" importada${prefill.camelot_key ? ' · '+prefill.camelot_key : ''}`);
+  toast(`"${title}" importada`);
 }
 
 // ── CSV IMPORT ──
